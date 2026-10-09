@@ -1,0 +1,17 @@
+
+# Archivos generados por .NET
+bin/
+obj/
+
+# Configuración local de Visual Studio
+.vs/
+*.user
+*.suo
+
+# Carpetas de publicación
+publish/
+artifacts/
+
+# Archivos temporales
+*.tmp
+*.log
