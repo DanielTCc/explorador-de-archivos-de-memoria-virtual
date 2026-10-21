@@ -1,0 +1,154 @@
+<Window x:Class="winzar_EXPLORER.EditorArchivo"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Editar archivo"
+        Height="560"
+        Width="760"
+        MinHeight="360"
+        MinWidth="520"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{StaticResource Fondo}"
+        PreviewKeyDown="Ventana_PreviewKeyDown"
+        Closing="Ventana_Closing">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Encabezado -->
+        <Border Grid.Row="0"
+                Background="{StaticResource Superficie}"
+                BorderBrush="{StaticResource Borde}"
+                BorderThickness="0,0,0,1"
+                Padding="20,14">
+            <DockPanel>
+                <Border DockPanel.Dock="Left"
+                        Width="36"
+                        Height="36"
+                        CornerRadius="8"
+                        Background="{StaticResource PrimarioSuave}"
+                        Margin="0,0,12,0">
+                    <TextBlock Style="{StaticResource Icono}"
+                               Text="&#xE8A5;"
+                               FontSize="17"
+                               HorizontalAlignment="Center"
+                               Foreground="{StaticResource Primario}"/>
+                </Border>
+
+                <Border x:Name="EtiquetaModo"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource Chip}"
+                        Background="{StaticResource Hover}"
+                        VerticalAlignment="Center"
+                        Margin="0"
+                        Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Icono}"
+                                   Text="&#xE72E;"
+                                   FontSize="11"
+                                   Margin="0,0,5,0"
+                                   Foreground="{StaticResource TextoSecundario}"/>
+                        <TextBlock Text="Solo lectura"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextoSecundario}"/>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtTitulo"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource Texto}"/>
+                    <TextBlock x:Name="TxtSubtitulo"
+                               FontSize="12"
+                               Foreground="{StaticResource TextoSecundario}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Nombre y contenido -->
+        <Grid Grid.Row="1" Margin="20,16,20,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel x:Name="PanelNombre"
+                        Grid.Row="0"
+                        Margin="0,0,0,14"
+                        Visibility="Collapsed">
+                <TextBlock Text="NOMBRE" Style="{StaticResource Etiqueta}" Margin="0,0,0,6"/>
+                <TextBox x:Name="TxtNombre"
+                         Style="{StaticResource CajaTexto}"
+                         TextChanged="TxtNombre_TextChanged"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="1"
+                       Text="CONTENIDO"
+                       Style="{StaticResource Etiqueta}"
+                       Margin="0,0,0,6"/>
+
+            <TextBox x:Name="TxtContenido"
+                     Grid.Row="2"
+                     Style="{StaticResource CajaTexto}"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     TextWrapping="Wrap"
+                     VerticalContentAlignment="Top"
+                     VerticalScrollBarVisibility="Auto"
+                     FontFamily="{StaticResource Monoespaciada}"
+                     FontSize="14"
+                     Padding="10,8"
+                     TextChanged="TxtContenido_TextChanged"/>
+        </Grid>
+
+        <!-- Uso de bloques, errores y acciones -->
+        <Grid Grid.Row="2" Margin="20,12,20,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                <TextBlock x:Name="TxtUso"
+                           FontSize="12"
+                           Foreground="{StaticResource TextoSecundario}"/>
+                <ProgressBar x:Name="BarraUso"
+                             Height="6"
+                             Maximum="1"
+                             Margin="0,6,0,0"
+                             MaxWidth="320"
+                             HorizontalAlignment="Left"
+                             Width="320"/>
+                <TextBlock x:Name="TxtError"
+                           FontSize="12"
+                           Foreground="{StaticResource Peligro}"
+                           TextWrapping="Wrap"
+                           Margin="0,6,0,0"
+                           Visibility="Collapsed"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button x:Name="BtnCancelar"
+                        Content="Cancelar"
+                        Margin="0,0,8,0"
+                        Click="Cancelar_Click"/>
+                <Button x:Name="BtnGuardar"
+                        Style="{StaticResource BotonPrimario}"
+                        MinWidth="110"
+                        ToolTip="Ctrl+S"
+                        Click="Guardar_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Icono}" Text="&#xE74E;" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="TxtBotonGuardar" Text="Guardar"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

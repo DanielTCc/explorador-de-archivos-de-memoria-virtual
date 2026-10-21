@@ -60,6 +60,29 @@ public class GestorBloques
         return libres.Select(b => b.Id).ToList();
     }
 
+    public int CalcularBloquesNecesarios(int bytes)
+    {
+        return (int)Math.Ceiling(bytes / (double)TamañoBloque);
+    }
+
+    // Marca como ocupados bloques concretos (por ejemplo, los guardados
+    // en el JSON). Solo reserva si todos existen, no se repiten y están libres.
+    public bool ReservarBloques(List<int> ids)
+    {
+        if (ids.Distinct().Count() != ids.Count)
+            return false;
+
+        if (ids.Any(id => id < 0 || id >= Bloques.Count || Bloques[id].Ocupado))
+            return false;
+
+        foreach (int id in ids)
+        {
+            Bloques[id].Ocupado = true;
+        }
+
+        return true;
+    }
+
     public void LiberarBloques(List<int> ids)
     {
         foreach (int id in ids)
@@ -68,6 +91,14 @@ public class GestorBloques
                 continue;
 
             Bloques[id].Ocupado = false;
+        }
+    }
+
+    public void LiberarTodos()
+    {
+        foreach (var bloque in Bloques)
+        {
+            bloque.Ocupado = false;
         }
     }
 }

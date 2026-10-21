@@ -10,14 +10,35 @@ El proyecto busca aplicar conceptos fundamentales de los sistemas operativos med
 
 ## ✨ Funcionalidades
 
-* 📁 Crear y navegar entre directorios virtuales.
-* 📄 Crear archivos virtuales y almacenar su contenido.
-* 🗑️ Eliminar archivos y directorios.
+* 📁 Crear, eliminar y navegar entre directorios virtuales (rutas como `a/b`, `..`, `/`).
+* 📄 Crear archivos, leerlos, escribir o agregar contenido y eliminarlos.
+* ℹ️ Ver los metadatos de cada archivo: tamaño, bloques, fechas y permisos.
+* 🔒 Permisos básicos por archivo: lectura (r), escritura (w) y eliminación (d).
+* 🔍 Buscar archivos y carpetas en todo el disco (admite `*` y `?`).
+* 🧱 Disco virtual de 100 bloques de 64 bytes con asignación y liberación de bloques y un mapa visual.
+* ⌨️ Terminal de comandos integrada (`mkdir`, `cd`, `create`, `write`, `read`, `ls`, `delete`, `exit`...).
 * 📥 Importar archivos de texto desde el equipo al sistema virtual.
-* 💾 Guardar y recuperar la estructura del sistema de archivos mediante JSON.
-* 🧱 Administrar bloques de almacenamiento virtual.
-* 📊 Consultar información del almacenamiento y el estado del sistema.
+* 💾 Guardar y recuperar el sistema de archivos (incluidos los bloques) mediante JSON.
 * 🖥️ Interfaz gráfica de escritorio desarrollada con WPF.
+
+## ⌨️ Terminal
+
+Desde el menú lateral **Terminal** se pueden usar comandos. Escribe `help` para ver la lista completa:
+
+```text
+/ > mkdir documentos
+/ > cd documentos
+/documentos > create tarea.txt
+/documentos > write tarea.txt "Sistema Operativo"
+"tarea.txt": 17 bytes, 1 bloque(s) [0].
+  Bloques asignados: [0]
+/documentos > read tarea.txt
+Sistema Operativo
+/documentos > delete tarea.txt
+Archivo "tarea.txt" eliminado. Bloques liberados: [0]
+```
+
+Otros comandos: `ls -l`, `append`, `info`, `chmod`, `find`, `df`, `blocks`, `pwd`, `clear`.
 
 ## 🛠️ Tecnologías utilizadas
 
@@ -32,10 +53,11 @@ El proyecto busca aplicar conceptos fundamentales de los sistemas operativos med
 
 La organización principal del código se divide en las siguientes áreas:
 
-* `Models/`: contiene las clases que representan los archivos, directorios y bloques virtuales.
-* `Services/`: contiene la lógica del sistema de archivos y la administración del almacenamiento.
-* `MainWindow.xaml`: define la interfaz gráfica.
-* `MainWindow.xaml.cs`: controla las interacciones de la interfaz con el sistema de archivos.
+* `Models/`: clases que representan los archivos, directorios, bloques y permisos.
+* `Services/`: lógica del sistema de archivos (`SistemaArchivos`), administración de bloques (`GestorBloques`) e intérprete de comandos (`InterpreteComandos`).
+* `MainWindow.xaml`: ventana principal con la lista detallada de archivos.
+* `VentanaTerminal`, `EditorArchivo`, `VentanaPropiedades` y `VentanaAlmacenamiento`: terminal, editor, propiedades/permisos y mapa de bloques.
+* `winzar_EXPLORER.Tests/`: pruebas automatizadas con xUnit.
 
 ## 🚀 Instalación y ejecución
 
@@ -51,13 +73,21 @@ La organización principal del código se divide en las siguientes áreas:
    cd explorador-de-archivos-de-memoria-virtual
    ```
 
-3. Abre la solución `.sln` en Visual Studio.
+3. Abre la solución `winzar_EXPLORER.slnx` en Visual Studio.
 
 4. Restaura las dependencias si es necesario.
 
 5. Compila y ejecuta el proyecto desde Visual Studio.
 
 **Requisito:** utilizar Windows y una instalación de Visual Studio con soporte para desarrollo de aplicaciones de escritorio con .NET y WPF.
+
+## 🧪 Pruebas
+
+Las pruebas automatizadas cubren las operaciones de archivos y directorios, la asignación de bloques, los permisos, la búsqueda, la persistencia, el manejo de errores y la secuencia de la demostración. Usan discos y archivos temporales, sin tocar tus datos:
+
+```bash
+dotnet test winzar_EXPLORER.slnx
+```
 
 ## 💾 Persistencia de datos
 

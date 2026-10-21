@@ -15,6 +15,8 @@ public class DirectorioVirtual
 
     public List<DirectorioVirtual> Directorios { get; set; } = new();
 
+    public DateTime FechaCreacion { get; set; } = DateTime.Now;
+
     public DirectorioVirtual(string nombre, DirectorioVirtual? padre = null)
     {
         Nombre = nombre;

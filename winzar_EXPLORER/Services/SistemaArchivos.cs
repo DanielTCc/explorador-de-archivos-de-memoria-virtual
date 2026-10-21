@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using winzar_EXPLORER.Models;
 
 namespace winzar_EXPLORER.Services;
@@ -19,42 +20,71 @@ public class SistemaArchivos
 
     public string RutaPersistencia { get; }
 
+    // Mensaje para el usuario cuando el estado guardado no se pudo cargar.
+    public string? AdvertenciaCarga { get; private set; }
+
     private readonly JsonSerializerOptions opcionesJson = new()
     {
         WriteIndented = true
     };
 
-    public SistemaArchivos(int cantidadBloques = 100)
+    public SistemaArchivos(
+        int cantidadBloques = 100,
+        string? rutaPersistencia = null)
     {
         GestorBloques = new GestorBloques(cantidadBloques);
 
         Raiz = new DirectorioVirtual("Raíz");
         DirectorioActual = Raiz;
 
-        string carpetaDatos = Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
-            "WinzardExplorer");
+        if (rutaPersistencia == null)
+        {
+            string carpetaDatos = Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "WinzardExplorer");
 
-        Directory.CreateDirectory(carpetaDatos);
+            rutaPersistencia = Path.Combine(
+                carpetaDatos,
+                "filesystem.json");
+        }
 
-        RutaPersistencia = Path.Combine(
-            carpetaDatos,
-            "filesystem.json");
+        RutaPersistencia = Path.GetFullPath(rutaPersistencia);
+
+        Directory.CreateDirectory(
+            Path.GetDirectoryName(RutaPersistencia)!);
 
         if (File.Exists(RutaPersistencia))
         {
-            CargarEstado();
+            try
+            {
+                CargarEstado();
+            }
+            catch (Exception ex) when (
+                ex is JsonException or
+                      InvalidDataException or
+                      InvalidOperationException or
+                      ArgumentException or
+                      IOException)
+            {
+                // Un JSON dañado no debe impedir que la aplicación inicie.
+                ReiniciarEstado();
+                AdvertenciaCarga = RespaldarArchivoDañado(ex);
+            }
         }
     }
 
     public string ObtenerRutaActual()
     {
-        if (DirectorioActual == Raiz)
+        return ObtenerRuta(DirectorioActual);
+    }
+
+    public string ObtenerRuta(DirectorioVirtual? directorio)
+    {
+        if (directorio == null || directorio == Raiz)
             return "/";
 
         var nombres = new List<string>();
-        var directorio = DirectorioActual;
 
         while (directorio != null && directorio != Raiz)
         {
@@ -85,19 +115,26 @@ public class SistemaArchivos
             throw new InvalidOperationException(
                 "Ya existe un archivo o directorio con ese nombre.");
 
+        var actual = DirectorioActual;
+
         var nuevo = new DirectorioVirtual(
             nombre,
-            DirectorioActual);
+            actual);
 
-        DirectorioActual.Directorios.Add(nuevo);
+        actual.Directorios.Add(nuevo);
 
-        GuardarEstado();
+        GuardarODeshacer(() => actual.Directorios.Remove(nuevo));
     }
 
     public void EliminarDirectorio(string nombre)
     {
-        var directorio = DirectorioActual.Directorios
-            .FirstOrDefault(d => d.Nombre == nombre);
+        var actual = DirectorioActual;
+
+        var directorio = actual.Directorios
+            .FirstOrDefault(d =>
+                d.Nombre.Equals(
+                    nombre,
+                    StringComparison.OrdinalIgnoreCase));
 
         if (directorio == null)
             throw new InvalidOperationException(
@@ -110,37 +147,43 @@ public class SistemaArchivos
                 "El directorio no está vacío.");
         }
 
-        DirectorioActual.Directorios.Remove(directorio);
+        int posicion = actual.Directorios.IndexOf(directorio);
 
-        GuardarEstado();
+        actual.Directorios.RemoveAt(posicion);
+
+        GuardarODeshacer(() => actual.Directorios.Insert(posicion, directorio));
     }
 
-    public void CambiarDirectorio(string nombre)
+    // Acepta un nombre, "..", "/" o rutas como "documentos/2026" o "/a/b".
+    // Si algún tramo no existe, el directorio actual no cambia.
+    public void CambiarDirectorio(string ruta)
     {
-        if (nombre == "..")
-        {
-            if (DirectorioActual.Padre != null)
-                DirectorioActual = DirectorioActual.Padre;
-
-            return;
-        }
-
-        if (nombre == "/" ||
-            nombre.Equals("Raíz", StringComparison.OrdinalIgnoreCase))
-        {
-            DirectorioActual = Raiz;
-            return;
-        }
-
-        var destino = DirectorioActual.Directorios
-            .FirstOrDefault(d =>
-                d.Nombre.Equals(
-                    nombre,
-                    StringComparison.OrdinalIgnoreCase));
-
-        if (destino == null)
+        if (string.IsNullOrWhiteSpace(ruta))
             throw new InvalidOperationException(
-                "No existe ese directorio.");
+                "Indica el directorio de destino.");
+
+        var destino = ruta.StartsWith('/') ? Raiz : DirectorioActual;
+
+        foreach (string parte in ruta.Split(
+                     '/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (parte == ".")
+                continue;
+
+            if (parte == "..")
+            {
+                destino = destino.Padre ?? destino;
+                continue;
+            }
+
+            destino = destino.Directorios
+                .FirstOrDefault(d =>
+                    d.Nombre.Equals(
+                        parte,
+                        StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException(
+                    $"No existe el directorio \"{parte}\".");
+        }
 
         DirectorioActual = destino;
     }
@@ -153,10 +196,7 @@ public class SistemaArchivos
             throw new InvalidOperationException(
                 "Ya existe un archivo o directorio con ese nombre.");
 
-        int bytes = Encoding.UTF8.GetByteCount(contenido);
-
-        int cantidad = (int)Math.Ceiling(
-            bytes / (double)GestorBloques.TamañoBloque);
+        int cantidad = CalcularBloques(contenido);
 
         var bloques = GestorBloques.AsignarBloques(cantidad);
 
@@ -166,38 +206,60 @@ public class SistemaArchivos
             Bloques = bloques
         };
 
-        DirectorioActual.Archivos.Add(archivo);
+        var actual = DirectorioActual;
 
-        GuardarEstado();
+        actual.Archivos.Add(archivo);
+
+        GuardarODeshacer(() =>
+        {
+            actual.Archivos.Remove(archivo);
+            GestorBloques.LiberarBloques(bloques);
+        });
     }
 
     public string LeerArchivo(string nombre)
     {
-        return BuscarArchivo(nombre).Contenido;
+        var archivo = BuscarArchivo(nombre);
+
+        ComprobarPermiso(archivo, Permisos.Lectura, "lectura");
+
+        return archivo.Contenido;
+    }
+
+    public ArchivoVirtual ObtenerArchivo(string nombre)
+    {
+        return BuscarArchivo(nombre);
     }
 
     public void EscribirArchivo(string nombre, string contenido)
     {
         var archivo = BuscarArchivo(nombre);
 
-        int bytesNuevos = Encoding.UTF8.GetByteCount(contenido);
+        ComprobarPermiso(archivo, Permisos.Escritura, "escritura");
 
-        int bloquesNecesarios = (int)Math.Ceiling(
-            bytesNuevos / (double)GestorBloques.TamañoBloque);
+        string contenidoAnterior = archivo.Contenido;
+        var bloquesAnteriores = new List<int>(archivo.Bloques);
+        DateTime fechaAnterior = archivo.FechaModificacion;
+
+        int bloquesNecesarios = CalcularBloques(contenido);
 
         int bloquesActuales = archivo.Bloques.Count;
+
+        var nuevos = new List<int>();
+        var sobrantes = new List<int>();
 
         if (bloquesNecesarios > bloquesActuales)
         {
             int adicionales = bloquesNecesarios - bloquesActuales;
 
-            var nuevos = GestorBloques.AsignarBloques(adicionales);
+            // Si no hay espacio se lanza la excepción antes de modificar el archivo.
+            nuevos = GestorBloques.AsignarBloques(adicionales);
 
             archivo.Bloques.AddRange(nuevos);
         }
         else if (bloquesNecesarios < bloquesActuales)
         {
-            var sobrantes = archivo.Bloques
+            sobrantes = archivo.Bloques
                 .Skip(bloquesNecesarios)
                 .ToList();
 
@@ -211,18 +273,112 @@ public class SistemaArchivos
         archivo.Contenido = contenido;
         archivo.FechaModificacion = DateTime.Now;
 
-        GuardarEstado();
+        GuardarODeshacer(() =>
+        {
+            GestorBloques.LiberarBloques(nuevos);
+            GestorBloques.ReservarBloques(sobrantes);
+
+            archivo.Bloques = bloquesAnteriores;
+            archivo.Contenido = contenidoAnterior;
+            archivo.FechaModificacion = fechaAnterior;
+        });
+    }
+
+    // Agrega texto al final del archivo (equivalente a append).
+    public void AgregarAlArchivo(string nombre, string texto)
+    {
+        var archivo = BuscarArchivo(nombre);
+
+        EscribirArchivo(nombre, archivo.Contenido + texto);
+    }
+
+    public void CambiarPermisos(string nombre, Permisos permisos)
+    {
+        var archivo = BuscarArchivo(nombre);
+
+        Permisos anteriores = archivo.Permisos;
+
+        archivo.Permisos = permisos & Permisos.Todos;
+
+        GuardarODeshacer(() => archivo.Permisos = anteriores);
+    }
+
+    // Busca en todo el árbol los elementos cuyo nombre contiene el texto.
+    // Admite comodines: "*.txt", "tarea?".
+    public List<ResultadoBusqueda> Buscar(string patron)
+    {
+        if (string.IsNullOrWhiteSpace(patron))
+            throw new ArgumentException("Indica qué buscar.");
+
+        Func<string, bool> coincide;
+
+        if (patron.Contains('*') || patron.Contains('?'))
+        {
+            var expresion = new Regex(
+                "^" + Regex.Escape(patron)
+                    .Replace("\\*", ".*")
+                    .Replace("\\?", ".") + "$",
+                RegexOptions.IgnoreCase);
+
+            coincide = expresion.IsMatch;
+        }
+        else
+        {
+            coincide = n => n.Contains(
+                patron,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        var resultados = new List<ResultadoBusqueda>();
+
+        BuscarEn(Raiz, coincide, resultados);
+
+        return resultados;
+    }
+
+    // Relaciona cada bloque ocupado con la ruta del archivo que lo usa.
+    public Dictionary<int, string> ObtenerMapaBloques()
+    {
+        var mapa = new Dictionary<int, string>();
+
+        void Recorrer(DirectorioVirtual directorio)
+        {
+            foreach (var archivo in directorio.Archivos)
+            {
+                string ruta = UnirRuta(ObtenerRuta(directorio), archivo.Nombre);
+
+                foreach (int id in archivo.Bloques)
+                    mapa[id] = ruta;
+            }
+
+            foreach (var subdirectorio in directorio.Directorios)
+                Recorrer(subdirectorio);
+        }
+
+        Recorrer(Raiz);
+
+        return mapa;
     }
 
     public void EliminarArchivo(string nombre)
     {
         var archivo = BuscarArchivo(nombre);
 
+        ComprobarPermiso(archivo, Permisos.Eliminacion, "eliminación");
+
+        var actual = DirectorioActual;
+
+        int posicion = actual.Archivos.IndexOf(archivo);
+
         GestorBloques.LiberarBloques(archivo.Bloques);
 
-        DirectorioActual.Archivos.Remove(archivo);
+        actual.Archivos.RemoveAt(posicion);
 
-        GuardarEstado();
+        GuardarODeshacer(() =>
+        {
+            GestorBloques.ReservarBloques(archivo.Bloques);
+            actual.Archivos.Insert(posicion, archivo);
+        });
     }
 
     // Guarda la estructura y los contenidos en un archivo JSON.
@@ -242,6 +398,26 @@ public class SistemaArchivos
         File.Move(temporal, RutaPersistencia, true);
     }
 
+    // Si no se puede guardar, revierte el cambio en memoria para que
+    // la simulación no quede distinta de lo que hay en disco.
+    private void GuardarODeshacer(Action deshacer)
+    {
+        try
+        {
+            GuardarEstado();
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException)
+        {
+            deshacer();
+
+            throw new IOException(
+                "No se pudo guardar el estado en disco, " +
+                "por lo que la operación se canceló.\n\n" + ex.Message,
+                ex);
+        }
+    }
+
     // Recupera la estructura y reconstruye la asignación de bloques.
     private void CargarEstado()
     {
@@ -255,9 +431,70 @@ public class SistemaArchivos
             throw new InvalidDataException(
                 "El archivo de persistencia está vacío o no es válido.");
 
-        CargarContenidoDirectorio(estado, Raiz);
+        var pendientes = new List<(ArchivoVirtual Archivo, List<int> Bloques)>();
+
+        if (estado.FechaCreacion != default)
+            Raiz.FechaCreacion = estado.FechaCreacion;
+
+        CargarContenidoDirectorio(estado, Raiz, pendientes);
+
+        // Primero se respetan los bloques guardados; así un archivo sin
+        // bloques válidos no ocupa los que pertenecen a otro.
+        var sinBloques = new List<ArchivoVirtual>();
+
+        foreach (var (archivo, bloquesGuardados) in pendientes)
+        {
+            int necesarios = CalcularBloques(archivo.Contenido);
+
+            if (bloquesGuardados.Count == necesarios &&
+                GestorBloques.ReservarBloques(bloquesGuardados))
+            {
+                archivo.Bloques = new List<int>(bloquesGuardados);
+            }
+            else
+            {
+                sinBloques.Add(archivo);
+            }
+        }
+
+        foreach (var archivo in sinBloques)
+        {
+            archivo.Bloques = GestorBloques.AsignarBloques(
+                CalcularBloques(archivo.Contenido));
+        }
 
         DirectorioActual = Raiz;
+    }
+
+    private void ReiniciarEstado()
+    {
+        Raiz.Archivos.Clear();
+        Raiz.Directorios.Clear();
+        GestorBloques.LiberarTodos();
+        DirectorioActual = Raiz;
+    }
+
+    // Aparta el JSON dañado para no sobrescribirlo en el próximo guardado.
+    private string RespaldarArchivoDañado(Exception error)
+    {
+        string mensaje =
+            "No se pudo cargar el sistema de archivos guardado " +
+            "y se inició uno vacío.\n\nMotivo: " + error.Message;
+
+        try
+        {
+            string respaldo =
+                RutaPersistencia + $".corrupto-{DateTime.Now:yyyyMMdd-HHmmss}";
+
+            File.Move(RutaPersistencia, respaldo, true);
+
+            return mensaje + "\n\nCopia del archivo original: " + respaldo;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException)
+        {
+            return mensaje;
+        }
     }
 
     private DirectorioGuardado CrearCopiaDirectorio(
@@ -265,7 +502,8 @@ public class SistemaArchivos
     {
         var copia = new DirectorioGuardado
         {
-            Nombre = directorio.Nombre
+            Nombre = directorio.Nombre,
+            FechaCreacion = directorio.FechaCreacion
         };
 
         foreach (var archivo in directorio.Archivos)
@@ -274,8 +512,10 @@ public class SistemaArchivos
             {
                 Nombre = archivo.Nombre,
                 Contenido = archivo.Contenido,
+                Bloques = new List<int>(archivo.Bloques),
                 FechaCreacion = archivo.FechaCreacion,
-                FechaModificacion = archivo.FechaModificacion
+                FechaModificacion = archivo.FechaModificacion,
+                Permisos = archivo.Permisos
             });
         }
 
@@ -290,42 +530,90 @@ public class SistemaArchivos
 
     private void CargarContenidoDirectorio(
         DirectorioGuardado guardado,
-        DirectorioVirtual destino)
+        DirectorioVirtual destino,
+        List<(ArchivoVirtual Archivo, List<int> Bloques)> pendientes)
     {
-        foreach (var archivoGuardado in guardado.Archivos)
+        foreach (var archivoGuardado in guardado.Archivos ?? new())
         {
-            string contenido = archivoGuardado.Contenido ?? "";
-
-            int bytes = Encoding.UTF8.GetByteCount(contenido);
-
-            int cantidad = (int)Math.Ceiling(
-                bytes / (double)GestorBloques.TamañoBloque);
-
-            var bloques = GestorBloques.AsignarBloques(cantidad);
+            ValidarNombre(archivoGuardado.Nombre);
 
             var archivo = new ArchivoVirtual(archivoGuardado.Nombre)
             {
-                Contenido = contenido,
-                Bloques = bloques,
+                Contenido = archivoGuardado.Contenido ?? "",
                 FechaCreacion = archivoGuardado.FechaCreacion,
-                FechaModificacion = archivoGuardado.FechaModificacion
+                FechaModificacion = archivoGuardado.FechaModificacion,
+                Permisos = archivoGuardado.Permisos & Permisos.Todos
             };
 
             destino.Archivos.Add(archivo);
+
+            pendientes.Add((archivo, archivoGuardado.Bloques ?? new()));
         }
 
-        foreach (var directorioGuardado in guardado.Directorios)
+        foreach (var directorioGuardado in guardado.Directorios ?? new())
         {
+            ValidarNombre(directorioGuardado.Nombre);
+
             var subdirectorio = new DirectorioVirtual(
                 directorioGuardado.Nombre,
                 destino);
+
+            if (directorioGuardado.FechaCreacion != default)
+                subdirectorio.FechaCreacion = directorioGuardado.FechaCreacion;
 
             destino.Directorios.Add(subdirectorio);
 
             CargarContenidoDirectorio(
                 directorioGuardado,
-                subdirectorio);
+                subdirectorio,
+                pendientes);
         }
+    }
+
+    private void BuscarEn(
+        DirectorioVirtual directorio,
+        Func<string, bool> coincide,
+        List<ResultadoBusqueda> resultados)
+    {
+        string ruta = ObtenerRuta(directorio);
+
+        foreach (var subdirectorio in directorio.Directorios)
+        {
+            if (coincide(subdirectorio.Nombre))
+                resultados.Add(new ResultadoBusqueda(
+                    UnirRuta(ruta, subdirectorio.Nombre), subdirectorio));
+        }
+
+        foreach (var archivo in directorio.Archivos)
+        {
+            if (coincide(archivo.Nombre))
+                resultados.Add(new ResultadoBusqueda(
+                    UnirRuta(ruta, archivo.Nombre), archivo));
+        }
+
+        foreach (var subdirectorio in directorio.Directorios)
+            BuscarEn(subdirectorio, coincide, resultados);
+    }
+
+    public static string UnirRuta(string directorio, string nombre)
+    {
+        return directorio == "/" ? "/" + nombre : directorio + "/" + nombre;
+    }
+
+    private static void ComprobarPermiso(
+        ArchivoVirtual archivo,
+        Permisos necesario,
+        string descripcion)
+    {
+        if (!archivo.Permisos.HasFlag(necesario))
+            throw new UnauthorizedAccessException(
+                $"Permiso denegado: \"{archivo.Nombre}\" no tiene permiso de {descripcion}.");
+    }
+
+    private int CalcularBloques(string contenido)
+    {
+        return GestorBloques.CalcularBloquesNecesarios(
+            Encoding.UTF8.GetByteCount(contenido));
     }
 
     private ArchivoVirtual BuscarArchivo(string nombre)
@@ -356,11 +644,16 @@ public class SistemaArchivos
                        StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void ValidarNombre(string nombre)
+    private static void ValidarNombre(string? nombre)
     {
         if (string.IsNullOrWhiteSpace(nombre))
             throw new ArgumentException(
                 "El nombre no puede estar vacío.");
+
+        // "." y ".." están reservados para la navegación.
+        if (nombre == "." || nombre == "..")
+            throw new ArgumentException(
+                "Los nombres \".\" y \"..\" están reservados.");
 
         if (nombre.IndexOfAny(
                 Path.GetInvalidFileNameChars()) >= 0 ||
@@ -381,6 +674,8 @@ public class SistemaArchivos
         public List<ArchivoGuardado> Archivos { get; set; } = new();
 
         public List<DirectorioGuardado> Directorios { get; set; } = new();
+
+        public DateTime FechaCreacion { get; set; }
     }
 
     private class ArchivoGuardado
@@ -389,8 +684,17 @@ public class SistemaArchivos
 
         public string Contenido { get; set; } = "";
 
+        // Bloques asignados; se conservan para que el mapa de bloques
+        // sea el mismo al reiniciar la aplicación.
+        public List<int> Bloques { get; set; } = new();
+
         public DateTime FechaCreacion { get; set; }
 
         public DateTime FechaModificacion { get; set; }
+
+        // Si falta en un JSON antiguo, el archivo conserva todos los permisos.
+        public Permisos Permisos { get; set; } = Permisos.Todos;
     }
 }
+
+public record ResultadoBusqueda(string Ruta, object Elemento);

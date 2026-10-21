@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="winzar_EXPLORER/winzar_EXPLORER.csproj" />
+  <Project Path="winzar_EXPLORER.Tests/winzar_EXPLORER.Tests.csproj" />
 </Solution>

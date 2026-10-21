@@ -19,6 +19,8 @@ public class ArchivoVirtual
 
     public DateTime FechaModificacion { get; set; } = DateTime.Now;
 
+    public Permisos Permisos { get; set; } = Permisos.Todos;
+
     public ArchivoVirtual(string nombre)
     {
         Nombre = nombre;
