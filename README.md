@@ -114,12 +114,14 @@ Este proyecto permite poner en práctica conceptos relacionados con:
 
 **En desarrollo.** Las funcionalidades y la arquitectura pueden ampliarse durante el desarrollo académico.
 
-## 👨‍💻 Autor
+## 👨‍💻 Autores
 
-**Daniel Tijerino**
 
-GitHub: [@DanielTCc](https://github.com/DanielTCc)
 
+GitHub:
+[@DanielTCc](https://github.com/DanielTCc)
+[Marcelv11](https://github.com/Marcelv11)
+[GStevenMolina](https://github.com/GStevenMolina)
 ## 📄 Licencia
 
 Proyecto académico. No se ha especificado una licencia de distribución.
